@@ -1,6 +1,7 @@
 import pytest
 from app import app  # Import your application
 
+
 @pytest.fixture
 def client():
     """Create a test client for the app."""
