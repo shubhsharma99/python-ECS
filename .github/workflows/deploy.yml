@@ -1,0 +1,64 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.x'
+
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+
+    - name: Lint code
+      run: |
+        pip install flake8
+        flake8 .
+
+    - name: Test code
+      run: |
+        pip install pytest
+        pytest
+
+    - name: Log in to Amazon ECR
+      env:
+        AWS_REGION: us-east-1
+        ECR_REPO_NAME: my-python-app
+      run: |
+        aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO_NAME
+
+    - name: Build and push Docker image
+      env:
+        ECR_REPO_NAME: my-python-app
+        IMAGE_TAG: latest
+        AWS_REGION: us-east-1
+      run: |
+        docker build -t $ECR_REPO_NAME:$IMAGE_TAG .
+        docker tag $ECR_REPO_NAME:$IMAGE_TAG ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO_NAME:$IMAGE_TAG
+        docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO_NAME:$IMAGE_TAG
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+    - name: Deploy to ECS
+      env:
+        AWS_REGION: us-east-1
+        CLUSTER_NAME: my-ecs-cluster
+        SERVICE_NAME: my-python-service
+        TASK_DEFINITION: my-python-task
+        CONTAINER_NAME: python-app
+        IMAGE_URI: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com/my-python-app:latest
+      run: |
+        aws ecs update-service --cluster $CLUSTER_NAME --service $SERVICE_NAME --force-new-deployment
